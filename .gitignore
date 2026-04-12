@@ -1,0 +1,25 @@
+# Build output
+bin/*
+!bin/*.ini
+*.obj
+*.lib
+*.exp
+*.pdb
+*.ilk
+
+# NuGet packages
+packages/
+
+# NuGet CLI
+nuget.exe
+
+# IDE
+.vs/
+*.vcxproj.user
+*.suo
+*.sln
+*.vcxproj.filters
+
+# OS
+Thumbs.db
+desktop.ini
