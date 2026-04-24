@@ -63,7 +63,12 @@ private:
     bool m_isInitializing = false;
     std::wstring m_lastDirectory;
 
+    // --- Settings (loaded from INI on cold start) ---
+    int  m_volume = 50;
+    bool m_autoplay = true;
+
     // --- Private Internal Methods ---
+    void LoadSettings();
     void LoadVideoIntoWebView();
     void CreateFallbackWindow(const wchar_t* message);
     std::wstring UrlEncodeFilename(const std::wstring& filename);

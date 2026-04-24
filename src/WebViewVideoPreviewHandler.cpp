@@ -1,12 +1,17 @@
 #include "WebViewVideoPreviewHandler.h"
 #include <shlobj.h>
 #include <filesystem>
+#include <algorithm>
+#include <cwctype>
+#include <WebView2EnvironmentOptions.h>
 
 #pragma comment(lib, "shlwapi.lib")
 #pragma comment(lib, "ole32.lib")
 #pragma comment(lib, "user32.lib")
 #pragma comment(lib, "uuid.lib")
 #pragma comment(lib, "shell32.lib")
+
+extern HMODULE g_hModule;
 
 using namespace Microsoft::WRL;
 
@@ -132,6 +137,8 @@ IFACEMETHODIMP WebViewVideoPreviewHandler::DoPreview()
     if (m_isInitializing) return S_OK;
     m_isInitializing = true;
 
+    LoadSettings();
+
     PWSTR localLowPath = nullptr;
     if (FAILED(SHGetKnownFolderPath(FOLDERID_LocalAppDataLow, 0, NULL, &localLowPath)))
         return E_FAIL;
@@ -139,10 +146,13 @@ IFACEMETHODIMP WebViewVideoPreviewHandler::DoPreview()
     std::wstring userDataFolder = std::wstring(localLowPath) + L"\\WebView2VideoPreview";
     CoTaskMemFree(localLowPath);
 
+    auto options = Make<CoreWebView2EnvironmentOptions>();
+    options->put_AdditionalBrowserArguments(L"--autoplay-policy=no-user-gesture-required");
+
     ComPtr<IPreviewHandler> self(this);
 
     HRESULT hr = CreateCoreWebView2EnvironmentWithOptions(
-        nullptr, userDataFolder.c_str(), nullptr,
+        nullptr, userDataFolder.c_str(), options.Get(),
         Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
             [this, self](HRESULT res, ICoreWebView2Environment* env) -> HRESULT {
                 if (FAILED(res)) { m_isInitializing = false; return res; }
@@ -203,6 +213,10 @@ void WebViewVideoPreviewHandler::LoadVideoIntoWebView()
             m_lastDirectory = directory;
         }
 
+        wchar_t volBuf[16];
+        swprintf(volBuf, 16, L"%.3f", static_cast<double>(m_volume) / 100.0);
+        std::wstring volumeFrac = volBuf;
+
         if (sameFolder && !m_lastDirectory.empty()) {
             // FAST PATH: Same folder — hot-swap video src via JS, keep DOM alive
             std::wstring js =
@@ -211,18 +225,22 @@ void WebViewVideoPreviewHandler::LoadVideoIntoWebView()
                 L"if(!v)return;"
                 L"v.pause();"
                 L"v.src='" + videoUrl + L"';"
-                L"v.load();"
-                L"v.play().catch(function(){});"
-                L"})();";
+                L"v.load();";
+            if (m_autoplay) {
+                js += L"v.play().catch(function(){});";
+            }
+            js += L"})();";
             m_webView->ExecuteScript(js.c_str(), nullptr);
         } else {
             // SAFE PATH: Different folder or first load — full NavigateToString
+            std::wstring autoplayAttr = m_autoplay ? L"autoplay " : L"";
             std::wstring htmlPayload =
                 L"<!DOCTYPE html><html style='margin:0;padding:0;overflow:hidden;background:#000;'>"
                 L"<body style='margin:0;padding:0;background:#000;'>"
                 L"<video id='player' src='" + videoUrl + L"' "
                 L"style='width:100vw;height:100vh;object-fit:contain;' "
-                L"autoplay controls muted loop></video>"
+                + autoplayAttr + L"controls loop></video>"
+                L"<script>document.getElementById('player').volume=" + volumeFrac + L";</script>"
                 L"</body></html>";
             m_webView->NavigateToString(htmlPayload.c_str());
         }
@@ -233,6 +251,29 @@ void WebViewVideoPreviewHandler::LoadVideoIntoWebView()
 
 
 // --- Helpers ---
+
+void WebViewVideoPreviewHandler::LoadSettings()
+{
+    wchar_t modulePath[MAX_PATH];
+    GetModuleFileNameW(g_hModule, modulePath, MAX_PATH);
+
+    std::wstring iniPath = modulePath;
+    size_t extPos = iniPath.find_last_of(L".");
+    if (extPos != std::wstring::npos) {
+        iniPath = iniPath.substr(0, extPos) + L".ini";
+    }
+
+    int vol = GetPrivateProfileIntW(L"Settings", L"Volume", 50, iniPath.c_str());
+    m_volume = std::clamp(vol, 0, 100);
+
+    wchar_t buf[16] = {0};
+    GetPrivateProfileStringW(L"Settings", L"Autoplay", L"true",
+                             buf, _countof(buf), iniPath.c_str());
+    std::wstring val = buf;
+    std::transform(val.begin(), val.end(), val.begin(),
+                   [](wchar_t c){ return static_cast<wchar_t>(std::towlower(c)); });
+    m_autoplay = (val != L"false" && val != L"0" && val != L"no");
+}
 
 std::wstring WebViewVideoPreviewHandler::UrlEncodeFilename(const std::wstring& filename)
 {

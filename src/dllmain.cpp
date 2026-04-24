@@ -9,7 +9,7 @@
 
 using namespace Microsoft::WRL;
 
-static HMODULE g_hModule = nullptr;
+HMODULE g_hModule = nullptr;
 
 // DLL entry point
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserved)

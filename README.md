@@ -1,23 +1,25 @@
-# Windows Video Preview Handler
+# WebView Video Preview Handler
 
-A Windows Shell preview handler that plays video and audio files directly in the File Explorer preview pane using WebView2.
+Enables previewing most common video and audio formats in explorer's preview pane by using WebView2.
 
 ## Install
 
 1. Download the latest release zip
 2. Extract to a permanent location (e.g. `%AppData%\VideoPreviewHandler`)
 3. Run `register.bat` as administrator
-4. In file explorer, enable the preview pane
+4. Make sure Preview pane is enabled in explorer: Top bar -> View -> Preview pane
 
 To uninstall, run `unregister.bat` as administrator and delete the folder.
 
-## Supported Formats
+## Configuration
 
-Configured via `WebViewVideoPreview.ini` — by default:
+Configuration happens via `WebViewVideoPreview.ini`. Available settings:
 
-`.3gp` `.m4v` `.mkv` `.mov` `.mp4` `.ogv` `.webm` `.aac` `.flac` `.m4a` `.mp3` `.ogg` `.opus` `.wav` `.weba`
+- **Extensions**: comma-separated list of file extensions to associate with the handler (leading dots required). Defaults: `.3gp` `.m4v` `.mkv` `.mov` `.mp4` `.ogv` `.webm` `.aac` `.flac` `.m4a` `.mp3` `.ogg` `.opus` `.wav` `.weba`. Changes take effect after re-running `register.bat`.
+- **Volume**: initial player volume, integer from `0` to `100`. Default `50`. Applied each time a preview cold-starts; subsequent in-folder swaps preserve any manual adjustment. 
+- **Autoplay**: `true` or `false`. Default `true`.
 
-Edit the INI file to add or remove extensions. Re-register after changes.
+Changing volume or autoplay setting requires restarting explorer.exe to take effect.
 
 ## Requirements
 
