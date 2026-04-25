@@ -198,7 +198,12 @@ void WebViewVideoPreviewHandler::LoadVideoIntoWebView()
         std::filesystem::path path(m_filePath);
         std::wstring directory = path.parent_path().wstring();
         std::wstring filename = path.filename().wstring();
-        std::wstring videoUrl = L"http://preview.local/" + UrlEncodeFilename(filename);
+        std::wstring encodedFilename = UrlEncodeFilename(filename);
+        if (encodedFilename.empty() && !filename.empty()) {
+            CreateFallbackWindow(L"Filename contains invalid characters.");
+            return;
+        }
+        std::wstring videoUrl = L"http://preview.local/" + encodedFilename;
 
         bool sameFolder = (directory == m_lastDirectory);
 
@@ -275,16 +280,46 @@ void WebViewVideoPreviewHandler::LoadSettings()
     m_autoplay = (val != L"false" && val != L"0" && val != L"no");
 }
 
+// Percent-encodes a UTF-16 filename per RFC 3986 by first transcoding to UTF-8
+// and then escaping every byte outside the unreserved ASCII set. Returning a
+// string of pure ASCII keeps the result safe to drop into both HTML attribute
+// and JS string-literal contexts — do not widen the safe-list to include
+// quotes, angle brackets, &, or backslash without revisiting LoadVideoIntoWebView.
+// Returns empty on malformed UTF-16 (e.g. lone surrogates); caller must handle.
 std::wstring WebViewVideoPreviewHandler::UrlEncodeFilename(const std::wstring& filename)
 {
+    if (filename.empty()) return L"";
+
+    int required = WideCharToMultiByte(
+        CP_UTF8, WC_ERR_INVALID_CHARS,
+        filename.data(), static_cast<int>(filename.size()),
+        nullptr, 0, nullptr, nullptr);
+    if (required <= 0) return L"";
+
+    std::string utf8(static_cast<size_t>(required), '\0');
+    int written = WideCharToMultiByte(
+        CP_UTF8, WC_ERR_INVALID_CHARS,
+        filename.data(), static_cast<int>(filename.size()),
+        utf8.data(), required, nullptr, nullptr);
+    if (written != required) return L"";
+
+    static constexpr wchar_t kHex[] = L"0123456789ABCDEF";
+
     std::wstring encoded;
-    for (wchar_t ch : filename) {
-        if (iswalnum(ch) || ch == L'-' || ch == L'_' || ch == L'.' || ch == L'~') {
-            encoded += ch;
+    encoded.reserve(utf8.size() * 3);
+
+    for (unsigned char c : utf8) {
+        const bool unreserved =
+            (c >= 'A' && c <= 'Z') ||
+            (c >= 'a' && c <= 'z') ||
+            (c >= '0' && c <= '9') ||
+            c == '-' || c == '_' || c == '.' || c == '~';
+        if (unreserved) {
+            encoded.push_back(static_cast<wchar_t>(c));
         } else {
-            wchar_t buf[8];
-            swprintf(buf, 8, L"%%%02X", static_cast<unsigned int>(ch));
-            encoded += buf;
+            encoded.push_back(L'%');
+            encoded.push_back(kHex[c >> 4]);
+            encoded.push_back(kHex[c & 0x0F]);
         }
     }
     return encoded;
